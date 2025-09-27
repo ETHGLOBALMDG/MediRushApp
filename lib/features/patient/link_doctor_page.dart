@@ -1,3 +1,4 @@
+import 'package:app_frontend/core/utils.dart';
 import 'package:app_frontend/features/doctor/verification_page.dart';
 import 'package:app_frontend/features/patient/transactions_page.dart';
 import 'package:flutter/material.dart';
@@ -19,10 +20,37 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
   bool _tagDetected = false;
   bool _isScanning = false;
   bool _isWriting = false;
+
   // Doctor's
   String _docNfcData = "No card scanned yet.";
   bool _docTagDetected = false;
   bool _docIsScanning = false;
+
+  // Dates for last read and write
+  final SyncDateService _syncDateService = SyncDateService();
+  String lastRead = "Not found";
+  String lastWrite = "Not found";
+
+  @override
+  void initState() {
+    super.initState();
+    // Call the asynchronous fetch function
+    _fetchSyncDates();
+  }
+
+  // Function to fetch the sync dates from local storage
+  void _fetchSyncDates() async {
+    // 1. Fetch dates from SharedPreferences
+    String? readDate = await _syncDateService.getLastReadDate();
+    String? writeDate = await _syncDateService.getLastWriteDate();
+
+    // 2. Update the state with the fetched values
+    setState(() {
+      // If a date is found (not null), use it; otherwise, keep "Not found"
+      lastRead = readDate ?? "Not found";
+      lastWrite = writeDate ?? "Not found";
+    });
+  }
 
   // QR Scanner Methods
   void _openQRScanner() async {
@@ -68,13 +96,23 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
 
     try {
       // Read text records from NFC tag
+      // For the patient, this will be his wallet address and private key for the Walrus blob
+      // Needs to be stripped of http:// and .com and also Uri.decoded before it is an actual JSON as a string
       List<String> records = await NFCService.readAllRecords();
 
+      _tagDetected = records.isNotEmpty;
+      if (_tagDetected) {
+        _syncDateService.setLastReadDate(getFormattedDateString());
+      }
+
       setState(() {
-        _tagDetected = records.isNotEmpty;
         _nfcData = records.isEmpty
             ? "No NDEF text found or tag not writable"
-            : records.join("\n");
+            : decodeJsonFromUrl(records.join("\n"));
+
+        if (_tagDetected) {
+          lastRead = getFormattedDateString();
+        }
       });
     } catch (e) {
       setState(() {
@@ -103,7 +141,7 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
         _docTagDetected = records.isNotEmpty;
         _docNfcData = records.isEmpty
             ? "No NDEF text found or tag not writable"
-            : records.join("\n");
+            : decodeJsonFromUrl(records.join("\n"));
       });
     } catch (e) {
       setState(() {
@@ -124,10 +162,19 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
     });
 
     try {
-      bool success = await NFCService.writeText(text);
+      String encodedData = Uri.encodeComponent(text);
+      String nfcUrl = makeUrl(encodedData);
 
+      bool success = await NFCService.writeText(nfcUrl);
+      if (success) {
+        _syncDateService.setLastWriteDate(getFormattedDateString());
+      }
       setState(() {
-        _nfcData = success ? "Text written: $text" : "Failed to write to NFC";
+        _nfcData = success ? text : "Failed to write to NFC";
+
+        if (success) {
+          lastWrite = getFormattedDateString();
+        }
       });
     } catch (e) {
       setState(() {
@@ -375,7 +422,9 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
 
                 // Container to write data into NFC
                 GestureDetector(
-                  onTap: _isWriting ? () {} : () => _writeNfcData(""),
+                  onTap: _isWriting
+                      ? () {}
+                      : () => _writeNfcData("http://somerandomdata.com"),
                   child: Container(
                     decoration: BoxDecoration(
                         border: Border.all(color: lightGreenColor, width: 2),
@@ -425,7 +474,7 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
                                 style: body2DarkTextStyle,
                               ),
                               Text(
-                                "Placeholder",
+                                lastWrite,
                                 style: body2TextStyle,
                               ),
                             ],
@@ -453,7 +502,7 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
                                 style: body2DarkTextStyle,
                               ),
                               Text(
-                                "Placeholder",
+                                lastRead,
                                 style: body2TextStyle,
                               ),
                             ],

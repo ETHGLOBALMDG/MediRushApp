@@ -137,26 +137,3 @@ class _TransactionsPageState extends State<TransactionsPage> {
     );
   }
 }
-
-class LocalStorageService {
-  static final LocalStorageService _instance = LocalStorageService._internal();
-  static const _hashKey = 'my_hash_key';
-
-  late final SharedPreferences _prefs;
-
-  LocalStorageService._internal();
-  factory LocalStorageService() => _instance;
-
-  Future<void> init() async => _prefs = await SharedPreferences.getInstance();
-
-  Future<bool> setHash(String hash) => _prefs.setString(_hashKey, hash);
-
-  String? getHash() => _prefs.getString(_hashKey);
-
-  Future<bool> removeHash() => _prefs.remove(_hashKey);
-
-  Future<bool> changeHash(String newHash) async {
-    await _prefs.remove(_hashKey);
-    return _prefs.setString(_hashKey, newHash);
-  }
-}

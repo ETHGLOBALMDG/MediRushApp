@@ -73,17 +73,19 @@ class NFCService {
         print('Record $i type: ${record.runtimeType}');
 
         if (record is ndef.TextRecord && record.text != null) {
-          result.add('TEXT: ${record.text!}');
+          // MODIFIED: Added just the raw text string
+          result.add(record.text!);
           print('Found text record: ${record.text}');
         } else if (record is ndef.UriRecord && record.uri != null) {
-          result.add('URL: ${record.uri!}');
+          // MODIFIED: Added just the raw URI string
+          result.add(record.uri!.toString());
           print('Found URI record: ${record.uri}');
           // } else if (record is ndef.) {
           // result.add('WIFI: ${record.ssid}');
           // print('Found WiFi record');
         } else {
-          // Handle other record types
-          result.add('UNKNOWN: ${record.runtimeType}');
+          // For unknown types, we still add the type name as the string content
+          result.add('UNKNOWN:${record.runtimeType}');
           print('Found unknown record type: ${record.runtimeType}');
         }
       }

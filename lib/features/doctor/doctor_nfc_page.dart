@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
-
+import '../../core/utils.dart';
 import '../../core/themes.dart';
 import '../../services/nfc_service.dart';
 import '../auth/onboarding_page.dart';
@@ -69,7 +69,7 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
         _patientTagDetected = records.isNotEmpty;
         _patientNfcData = records.isEmpty
             ? "No NDEF text found or tag not writable"
-            : records.join("\n");
+            : parseNfc(records.join("\n"));
       });
     } catch (e) {
       setState(() {
@@ -105,8 +105,8 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
       }
 
       // 2. Write the retrieved wallet address to NFC
-      // Note: Use 'walletAddress' instead of the old 'text' variable
-      bool success = await NFCService.writeText(walletAddress);
+      String data = makeUrl(walletAddress);
+      bool success = await NFCService.writeText(data);
 
       setState(() {
         _nfcData = success
@@ -129,14 +129,15 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
   /// Send a POST request to the backend server when the doctor scans the patient's NFC card
   Future<Map<String, dynamic>> sendPostRequest({
     required String url,
-    required String data,
+    required String nfcData,
   }) async {
     try {
       // 1. Prepare the request URL
       final uri = Uri.parse(url);
 
       // 2. Convert the Dart map (JSON data) into a JSON string
-      final body = data;
+      final encodedData = parseNfc(nfcData);
+      final data = Uri.decodeComponent(encodedData);
 
       // 3. Send the POST request
       final response = await http.post(
@@ -145,7 +146,7 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
           'Content-Type': 'application/json', // Essential for sending JSON data
           'Accept': 'application/json', // To request a JSON response
         },
-        body: body,
+        body: data,
       );
 
       // 4. Check the status code
@@ -330,7 +331,7 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
               if (_patientTagDetected)
                 rowButton(
                   onPressed: () => sendPostRequest(
-                      url: "mybackendurl.com", data: _patientNfcData),
+                      url: "mybackendurl.com", nfcData: _patientNfcData),
                   widgets: [
                     const Icon(Icons.arrow_upward_rounded),
                     const SizedBox(width: 8),

@@ -12,35 +12,6 @@ class VerificationPage extends StatefulWidget {
 }
 
 class _VerificationPageState extends State<VerificationPage> {
-  static DoctorCredentials? _parseCredentialsFromUrl(String url) {
-    try {
-      print('Parsing URL: $url');
-
-      // Extract base64 data from URL
-      final uri = Uri.parse(url);
-      final base64Data =
-          uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
-
-      if (base64Data.isEmpty) {
-        print('No base64 data found in URL');
-        return null;
-      }
-
-      print('Extracted base64 data: $base64Data');
-
-      // Decode and parse JSON
-      final decodedBytes = base64.decode(base64Data);
-      final jsonString = utf8.decode(decodedBytes);
-      print('Decoded JSON: $jsonString');
-
-      final data = jsonDecode(jsonString) as Map<String, dynamic>;
-      return DoctorCredentials.fromCompressed(data);
-    } catch (e) {
-      print('URL parsing error: $e');
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(

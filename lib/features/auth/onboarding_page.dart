@@ -1,31 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:introduction_screen/introduction_screen.dart';
 import '../../core/themes.dart';
+import '../../core/utils.dart';
 import '../doctor/doctor_nfc_page.dart';
 import 'connect_wallet_page.dart';
 import '../patient/link_doctor_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-class WalletAddrService {
-  static const String _addressKey = 'user_wallet_address';
-
-  Future<void> init() async {
-    // Shared preferences must be initialized before use
-    // In many Flutter apps, SharedPreferences.getInstance() is called here
-  }
-
-  Future<bool> setAddress(String address) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.setString(_addressKey, address);
-  }
-
-  // MODIFIED: Made the method asynchronous (returns Future<String?>)
-  Future<String?> getAddress() async {
-    final prefs = await SharedPreferences.getInstance();
-    // Retrieve the string value associated with the key
-    return prefs.getString(_addressKey);
-  }
-}
 
 class OnboardingPage extends StatelessWidget {
   const OnboardingPage({super.key});
