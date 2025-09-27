@@ -166,7 +166,7 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VeriMed', style: headingTextStyle),
+        title: const Text('MediRush', style: headingTextStyle),
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),

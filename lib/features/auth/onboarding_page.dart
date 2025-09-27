@@ -7,10 +7,11 @@ import '../patient/link_doctor_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class WalletAddrService {
-  static const String _addressKey = 'monitored_hedera_address';
+  static const String _addressKey = 'user_wallet_address';
 
   Future<void> init() async {
     // Shared preferences must be initialized before use
+    // In many Flutter apps, SharedPreferences.getInstance() is called here
   }
 
   Future<bool> setAddress(String address) async {
@@ -18,9 +19,11 @@ class WalletAddrService {
     return prefs.setString(_addressKey, address);
   }
 
-  String? getAddress() {
-    // In a real app, this would be synchronous if called after init
-    return null;
+  // MODIFIED: Made the method asynchronous (returns Future<String?>)
+  Future<String?> getAddress() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Retrieve the string value associated with the key
+    return prefs.getString(_addressKey);
   }
 }
 
@@ -79,8 +82,7 @@ class OnboardingPage extends StatelessWidget {
     return SafeArea(
       child: IntroductionScreen(
         pages: pages,
-        showSkipButton: true,
-        skip: const Text("Skip"),
+        showSkipButton: false,
         next: const Text("Next"),
         // ⚠️ Changed done text to be more general
         done: const Text("Continue",

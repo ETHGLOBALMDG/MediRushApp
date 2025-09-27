@@ -433,13 +433,12 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.1.2"
-  mopro_flutter_package:
+  mopro_flutter:
     dependency: "direct main"
     description:
-      name: mopro_flutter_package
-      sha256: "99ecc04ec12e2144e72dc48946292d8f88b6f389b19716afce726875a0e8a55a"
-      url: "https://pub.dev"
-    source: hosted
+      path: mopro_flutter_plugin
+      relative: true
+    source: path
     version: "0.0.1"
   ndef:
     dependency: transitive

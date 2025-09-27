@@ -12,34 +12,6 @@ class VerificationPage extends StatefulWidget {
 }
 
 class _VerificationPageState extends State<VerificationPage> {
-  static String _parseNdefUri(String url) {
-    try {
-      var result = url.trim();
-
-      // Remove protocol
-      if (result.startsWith('http://')) {
-        result = result.substring(7);
-      } else if (result.startsWith('https://')) {
-        result = result.substring(8);
-      }
-
-      // Remove www.
-      if (result.startsWith('www.')) {
-        result = result.substring(4);
-      }
-
-      // Remove .com at the end
-      if (result.endsWith('.com')) {
-        result = result.substring(0, result.length - 4);
-      }
-
-      return result;
-    } catch (e) {
-      print('Error stripping URL: $e');
-      return url;
-    }
-  }
-
   static DoctorCredentials? _parseCredentialsFromUrl(String url) {
     try {
       print('Parsing URL: $url');

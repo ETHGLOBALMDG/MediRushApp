@@ -7,6 +7,8 @@ environment:
   sdk: ^3.8.1
 
 dependencies:
+  mopro_flutter:
+    path: ./mopro_flutter_plugin
   flutter:
     sdk: flutter
 
@@ -18,7 +20,7 @@ dependencies:
       url: https://github.com/matteocrippa/flutter-nfc-reader.git
       ref: master
   mobile_scanner: ^7.1.2
-  mopro_flutter_package: ^0.0.1
+  # mopro_flutter_package: ^0.0.1
   introduction_screen: ^4.0.0
   archive: ^4.0.7
   app_links: ^6.4.1
@@ -57,3 +59,13 @@ flutter:
           style: italic
   assets:
     - assets/
+    - assets/multiplier2_final.zkey
+    - assets/plonk_fibonacci_pk.bin
+    - assets/plonk_fibonacci_vk.bin
+    - assets/plonk_fibonacci_srs.bin
+    - assets/doctor_verification_final.zkey
+    - assets/doctor_verification.wasm
+    - assets/noir_multiplier2.json
+    - assets/noir_multiplier2.srs
+    - assets/noir_multiplier2.vk
+    - assets/zk/
