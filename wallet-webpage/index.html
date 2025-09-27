@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>MetaMask Hedera Connect</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            text-align: center;
+        }
+
+        button {
+            background-color: #f6851b;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+        }
+
+        button:hover {
+            background-color: #e2761b;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f5f5f5;
+        }
+
+        .loading {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>MetaMask Hedera DApp</h1>
+
+    <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+    <button id="sendTxBtn" onclick="sendTransaction()" style="display: none;" disabled>Send HBAR</button>
+
+    <div class="status" id="status">Status: Click to connect your wallet</div>
+    <div class="loading" id="loading">Processing...</div>
+
+    <script>
+        let userAddress;
+
+        const HEDERA_CHAIN_ID = "0x128"; // Hedera Testnet (296)
+        const HBAR_DECIMALS = 8;
+
+        function checkMetaMask() {
+            if (typeof window.ethereum === "undefined") {
+                document.getElementById("status").innerText = "MetaMask not detected";
+                setTimeout(() => {
+                    window.location.href = "verimed://callback?error=" + encodeURIComponent("MetaMask not installed");
+                }, 2000);
+                return false;
+            }
+            return true;
+        }
+
+        async function connectWallet() {
+            const connectBtn = document.getElementById("connectBtn");
+            const status = document.getElementById("status");
+
+            if (!checkMetaMask()) return;
+
+            try {
+                connectBtn.disabled = true;
+                status.innerText = "Connecting to MetaMask...";
+
+                // MetaMask requires 18 decimals for native currency
+                await window.ethereum.request({
+                    method: "wallet_addEthereumChain",
+                    params: [{
+                        chainId: HEDERA_CHAIN_ID,
+                        chainName: "Hedera Testnet",
+                        nativeCurrency: {
+                            name: "HBAR",
+                            symbol: "HBAR",
+                            decimals: 18   // MetaMask enforces 18 decimals for native currency
+                        },
+                        rpcUrls: ["https://testnet.hashio.io/api"],
+                        blockExplorerUrls: ["https://testnet.hashscan.io"]
+                    }]
+                });
+
+                // Switch to the chain after adding it
+                await window.ethereum.request({
+                    method: "wallet_switchEthereumChain",
+                    params: [{ chainId: HEDERA_CHAIN_ID }]
+                });
+
+                const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+                userAddress = accounts[0];
+
+                status.innerText = `Connected: ${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+
+                document.getElementById("connectBtn").style.display = "none";
+                document.getElementById("sendTxBtn").style.display = "inline-block";
+                document.getElementById("sendTxBtn").disabled = false;
+
+            } catch (err) {
+                console.error("Connection error:", err);
+                status.innerText = "Connection failed: " + err.message;
+                connectBtn.disabled = false;
+
+                setTimeout(() => {
+                    window.location.href = "verimed://callback?error=" + encodeURIComponent(err.message);
+                }, 3000);
+            }
+        }
+
+        async function sendTransaction() {
+            const sendTxBtn = document.getElementById("sendTxBtn");
+            const status = document.getElementById("status");
+            const loading = document.getElementById("loading");
+
+            if (!userAddress) {
+                status.innerText = "Please connect wallet first";
+                return;
+            }
+
+            if (!checkMetaMask()) return;
+
+            try {
+                sendTxBtn.disabled = true;
+                loading.style.display = "block";
+                status.innerText = "Sending transaction...";
+
+                // FIXED: Convert HBAR to wei (18 decimals) for MetaMask display
+                // 1 HBAR = 10^8 tinybars, but MetaMask expects 18 decimal places
+                const hbarAmount = 1;
+                const weiAmount = BigInt(hbarAmount) * BigInt(10 ** 18); // Convert to wei (18 decimals)
+                const value = "0x" + weiAmount.toString(16);
+
+                console.log("Sending value:", value, "which is", weiAmount.toString(), "wei (for 1 HBAR)");
+
+                // Get current gas price estimate
+                let gasPrice;
+                try {
+                    gasPrice = await window.ethereum.request({ method: "eth_gasPrice" });
+                    console.log("Current gas price:", gasPrice);
+                } catch (e) {
+                    console.log("Failed to get gas price, using default");
+                    gasPrice = "0x1"; // Very low gas price as fallback
+                }
+
+                const txHash = await window.ethereum.request({
+                    method: "eth_sendTransaction",
+                    params: [{
+                        from: userAddress,
+                        to: userAddress, // sending to self for demo
+                        value: value,
+                        gas: "0x5208", // Standard 21,000 gas limit for simple transfer
+                        gasPrice: gasPrice,
+                    }]
+                });
+
+                console.log("Transaction sent:", txHash);
+                loading.style.display = "none";
+
+                const redirectUrl = `verimed://callback?status=success&txHash=${txHash}`;
+                status.innerHTML = `Transaction sent! Hash: ${txHash.substring(0, 10)}...<br><br><a href="${redirectUrl}"><button>Return to App</button></a>`;
+
+            } catch (err) {
+                console.error("Transaction error:", err);
+                sendTxBtn.disabled = false;
+                loading.style.display = "none";
+
+                let errorMessage = err.code === 4001 ? "User rejected the transaction." : err.message;
+
+                const redirectUrl = `verimed://callback?status=failure&error=${encodeURIComponent(errorMessage)}`;
+                status.innerHTML = `Transaction failed: ${errorMessage}<br><br><a href="${redirectUrl}"><button>Return to App</button></a>`;
+            }
+        }
+
+        // Auto-connect if already connected
+        document.addEventListener("DOMContentLoaded", function () {
+            if (typeof window.ethereum !== "undefined") {
+                window.ethereum.request({ method: "eth_accounts" }).then(accounts => {
+                    if (accounts.length > 0) {
+                        connectWallet();
+                    }
+                }).catch(err => {
+                    console.log("Auto-connect failed:", err);
+                });
+            }
+        });
+
+        // Handle account changes
+        if (typeof window.ethereum !== "undefined") {
+            window.ethereum.on("accountsChanged", function (accounts) {
+                if (accounts.length > 0) {
+                    userAddress = accounts[0];
+                    document.getElementById("status").innerText =
+                        `Connected: ${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                } else {
+                    userAddress = null;
+                    document.getElementById("status").innerText = "Disconnected";
+                    document.getElementById("connectBtn").style.display = "inline-block";
+                    document.getElementById("sendTxBtn").style.display = "none";
+                }
+            });
+
+            // Handle chain changes
+            window.ethereum.on("chainChanged", function (chainId) {
+                console.log("Chain changed to:", chainId);
+                if (chainId !== HEDERA_CHAIN_ID) {
+                    document.getElementById("status").innerText = "Please switch back to Hedera Testnet";
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

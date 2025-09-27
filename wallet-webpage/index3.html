@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaMask SDK - Flutter WebView</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🦊</div>
+            <h1>MetaMask Integration</h1>
+            <p>Connect your wallet and interact with the blockchain</p>
+        </div>
+
+        <div class="status-card">
+            <h3 id="statusText">Ready to connect</h3>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+        </div>
+
+        <div class="wallet-info" id="walletInfo">
+            <h3>🔗 Connected Wallet</h3>
+            <div class="address" id="walletAddress"></div>
+            <p><strong>Network:</strong> <span id="networkName">Unknown</span></p>
+            <p><strong>Balance:</strong> <span id="balance">Loading...</span> ETH</p>
+        </div>
+
+        <div class="actions">
+            <button class="connect-btn" id="connectBtn" onclick="connectWallet()">
+                Connect MetaMask Wallet
+            </button>
+
+            <div class="transaction-form" id="transactionForm">
+                <h3>💸 Send Transaction</h3>
+                <div class="form-group">
+                    <label for="toAddress">Recipient Address:</label>
+                    <input type="text" id="toAddress" placeholder="0x..." />
+                </div>
+                <div class="form-group">
+                    <label for="amount">Amount (ETH):</label>
+                    <input type="number" id="amount" placeholder="0.001" step="0.001" />
+                </div>
+                <button onclick="sendTransactionFromForm()">Send Transaction</button>
+
+                <h3>✍️ Sign Message</h3>
+                <div class="form-group">
+                    <label for="message">Message to Sign:</label>
+                    <textarea id="message" placeholder="Hello from MetaMask!" rows="3"></textarea>
+                </div>
+                <button onclick="signMessageFromForm()">Sign Message</button>
+            </div>
+        </div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@metamask/sdk@0.33.1/dist/browser/es/metamask-sdk.min.js"></script>
+    <script>
+        let sdk;
+        let ethereum;
+        let currentAccount = null;
+
+        const HEDERA_CHAIN_ID = '0x128'; // 296 in hex for Hedera testnet
+        const HBAR_DECIMALS = 8; // Hedera EVM uses 10^8 tinybars = 1 HBAR
+
+        async function initializeSDK() {
+            try {
+                sdk = new window.MetaMaskSDK.MetaMaskSDK({
+                    dappMetadata: {
+                        name: "Flutter WebView DApp",
+                        url: window.location.href,
+                        description: "A Flutter WebView MetaMask Integration"
+                    },
+                    preferDesktop: false,
+                    openDeeplink: (link) => {
+                        console.log("Deep link:", link);
+                        window.open(link, '_blank');
+                    }
+                });
+
+                ethereum = sdk.getProvider();
+
+                ethereum.on('accountsChanged', handleAccountsChanged);
+                ethereum.on('chainChanged', handleChainChanged);
+                ethereum.on('connect', handleConnect);
+                ethereum.on('disconnect', handleDisconnect);
+
+                log("MetaMask SDK initialized");
+
+                const accounts = await ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    handleAccountsChanged(accounts);
+                }
+
+            } catch (error) {
+                console.error("Failed to initialize SDK:", error);
+                log(`Failed to initialize: ${error.message}`);
+                sendToFlutter('error', { message: `Initialization failed: ${error.message}` });
+            }
+        }
+
+        async function connectWallet() {
+            if (!ethereum) await initializeSDK();
+
+            try {
+                showLoading(true);
+                updateStatus("Connecting to MetaMask...");
+
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                if (accounts.length > 0) handleAccountsChanged(accounts);
+
+                // Request switching to Hedera EVM testnet
+                await ethereum.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [{
+                        chainId: HEDERA_CHAIN_ID,
+                        chainName: 'Hedera Testnet',
+                        nativeCurrency: { name: 'HBAR', symbol: 'HBAR', decimals: HBAR_DECIMALS },
+                        rpcUrls: ['https://testnet.hashio.io/api'],
+                        blockExplorerUrls: ['https://testnet.hashscan.io']
+                    }]
+                });
+
+            } catch (error) {
+                console.error("Connection failed:", error);
+                const errorMsg = error.code === 4001 ? "User rejected the connection" : error.message;
+                updateStatus(`Connection failed: ${errorMsg}`);
+                sendToFlutter('error', { message: errorMsg });
+                showLoading(false);
+            }
+        }
+
+        async function sendTransaction(toAddress, valueHBAR) {
+            if (!currentAccount) return sendToFlutter('error', { message: "No wallet connected" });
+
+            try {
+                showLoading(true);
+                updateStatus("Sending transaction...");
+
+                // Convert HBAR to tinybars
+                const value = '0x' + (BigInt(Math.floor(valueHBAR * 10 ** HBAR_DECIMALS))).toString(16);
+
+                const txParams = { from: currentAccount, to: toAddress, value, gas: '0x5208' };
+                const txHash = await ethereum.request({ method: 'eth_sendTransaction', params: [txParams] });
+
+                log(`Transaction sent: ${txHash}`);
+                updateStatus(`Transaction sent! Hash: ${txHash}`);
+                sendToFlutter('transaction_sent', { txHash, from: currentAccount, to: toAddress, value: valueHBAR });
+
+                waitForTransactionReceipt(txHash);
+
+            } catch (error) {
+                console.error("Transaction failed:", error);
+                const errorMsg = error.code === 4001 ? "User rejected the transaction" : error.message;
+                updateStatus(`Transaction failed: ${errorMsg}`);
+                sendToFlutter('error', { message: errorMsg });
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function updateNetworkInfo() {
+            try {
+                const chainId = await ethereum.request({ method: 'eth_chainId' });
+                const networkName = chainId.toLowerCase() === HEDERA_CHAIN_ID ? 'Hedera Testnet' : `Unknown (${chainId})`;
+                document.getElementById('networkName').textContent = networkName;
+            } catch (error) { console.error('Error getting network info:', error); }
+        }
+
+        async function updateBalance() {
+            try {
+                if (!currentAccount) return;
+                const balanceHex = await ethereum.request({ method: 'eth_getBalance', params: [currentAccount, 'latest'] });
+                const tinybars = BigInt(balanceHex);
+                const hbarAmount = Number(tinybars) / 10 ** HBAR_DECIMALS;
+                document.getElementById('balance').textContent = hbarAmount.toFixed(4);
+            } catch (error) { console.error('Error getting balance:', error); }
+        }
+
+        function sendTransactionFromForm() {
+            const toAddress = document.getElementById('toAddress').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            if (!toAddress || !amount) { alert('Fill address and amount'); return; }
+            sendTransaction(toAddress, amount);
+        }
+
+        window.addEventListener('load', initializeSDK);
+        window.connectWallet = connectWallet;
+        window.sendTransaction = sendTransaction;
+        window.signMessage = signMessage;
+    </script>
+
+
+</body>
+
+</html>
