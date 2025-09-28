@@ -38,9 +38,9 @@ class _ConnectWalletPageState extends State<ConnectWalletPage>
   static const String _hederaEvmRpcUrl = 'https://testnet.hashio.io/api';
 
   final EthereumAddress _contractAddress = EthereumAddress.fromHex(
-      '0x12ab34cd56ef78ab90cd12ef34ab56cd78ef9012'); // ⚠️ Your Contract Address
+      '0xb336f276bd3c380c5183a0a2f21e631e4a333d00'); // ⚠️ Your Contract Address
   final String _smartContractAddress =
-      "0x12ab34cd56ef78ab90cd12ef34ab56cd78ef9012";
+      "0xb336f276bd3c380c5183a0a2f21e631e4a333d00";
   final String _functionName = "generateKey";
 
   late Web3Client _web3client;

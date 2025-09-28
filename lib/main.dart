@@ -1,6 +1,6 @@
+import 'package:app_frontend/core/utils.dart';
 import 'package:app_frontend/features/auth/onboarding_page.dart';
 import 'package:flutter/material.dart';
-import 'features/patient/transactions_page.dart';
 
 // import 'dart:io';
 

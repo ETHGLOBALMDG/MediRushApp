@@ -191,8 +191,6 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
   void _navigateToTransactionsPage() {
     if (_qrData == null) return;
 
-    final String recordData = _qrData!;
-
     // Reset state immediately after consumption
     setState(() {
       _qrData = null;
@@ -204,7 +202,11 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
       context,
       MaterialPageRoute(
         // Assuming MedicalRecordsPage is your target page
-        builder: (_) => TransactionsPage(recordData: recordData),
+        builder: (_) => TransactionsPage(
+          nfcData: '{"_patientID": "PATIENT_A12345"}',
+          treatmentData:
+              '{"treatment": "Eat healthy food", "diagnosis": "some diagnosis", "notes": "some notes"}',
+        ),
       ),
     );
   }
