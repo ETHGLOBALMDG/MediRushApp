@@ -55,11 +55,110 @@
     <div class="status" id="status">Status: Click to connect your wallet</div>
     <div class="loading" id="loading">Processing...</div>
 
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+
     <script>
         let userAddress;
 
         const HEDERA_CHAIN_ID = "0x128"; // Hedera Testnet (296)
         const HBAR_DECIMALS = 8;
+
+        const CONTRACT_ABI = [
+            {
+                "type": "function",
+                "name": "fetchBlobID",
+                "constant": true,
+                "stateMutability": "view",
+                "payable": false,
+                "inputs": [
+                    {
+                        "type": "string",
+                        "name": "_patientID"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "type": "string",
+                        "name": ""
+                    }
+                ]
+            },
+            {
+                "type": "function",
+                "name": "updateBlobID",
+                "constant": false,
+                "payable": false,
+                "inputs": [
+                    {
+                        "type": "string",
+                        "name": "_patientID"
+                    },
+                    {
+                        "type": "string",
+                        "name": "_newBlobID"
+                    }
+                ],
+                "outputs": []
+            },
+            {
+                "type": "function",
+                "name": "updateID",
+                "constant": false,
+                "payable": false,
+                "inputs": [
+                    {
+                        "type": "string",
+                        "name": "_prevID"
+                    },
+                    {
+                        "type": "string",
+                        "name": "_newID"
+                    }
+                ],
+                "outputs": []
+            }
+        ];
+
+        // --- NEW GLOBAL STATE FOR CONTRACT CALL ---
+        let contractAddressFromURL;
+        let functionNameFromURL;
+        let functionParamsFromURL;
+        // --- END NEW STATE ---
+
+        // Initialize the interface using the ABI (This requires Ethers.js)
+        let contractInterface;
+        try {
+            if (typeof ethers !== 'undefined') {
+                contractInterface = new ethers.utils.Interface(CONTRACT_ABI);
+            }
+        } catch (e) {
+            console.error("Ethers or ABI initialization failed:", e);
+        }
+
+        // --- NEW FUNCTION TO PARSE URL DATA ---
+        function parseDeepLinkData() {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            contractAddressFromURL = urlParams.get('contract');
+            functionNameFromURL = urlParams.get('function');
+            const paramsJson = urlParams.get('params');
+
+            if (paramsJson) {
+                try {
+                    // Decode URI component (e.g., handles spaces/symbols if not perfectly clean)
+                    const decodedJson = decodeURIComponent(paramsJson);
+                    functionParamsFromURL = JSON.parse(decodedJson);
+                    console.log("Parsed Params:", functionParamsFromURL);
+                } catch (e) {
+                    console.error("Failed to parse JSON parameters:", e);
+                }
+            }
+
+            if (functionNameFromURL) {
+                document.getElementById("sendTxBtn").innerText = `Execute: ${functionNameFromURL}`;
+            }
+        }
+        // --- END PARSE FUNCTION ---
 
         function checkMetaMask() {
             if (typeof window.ethereum === "undefined") {
@@ -124,52 +223,85 @@
             }
         }
 
+        // --- MODIFIED sendTransaction function ---
+
         async function sendTransaction() {
             const sendTxBtn = document.getElementById("sendTxBtn");
             const status = document.getElementById("status");
             const loading = document.getElementById("loading");
 
-            if (!userAddress) {
-                status.innerText = "Please connect wallet first";
+            if (!userAddress || !checkMetaMask() || !contractAddressFromURL || !functionNameFromURL) {
+                status.innerText = "Error: Missing connection or contract details.";
                 return;
             }
-
-            if (!checkMetaMask()) return;
 
             try {
                 sendTxBtn.disabled = true;
                 loading.style.display = "block";
-                status.innerText = "Sending transaction...";
 
-                // FIXED: Convert HBAR to wei (18 decimals) for MetaMask display
-                // 1 HBAR = 10^8 tinybars, but MetaMask expects 18 decimal places
+                // 1. DETERMINE FUNCTION TYPE
+                const fragment = contractInterface.getFunction(functionNameFromURL);
+
+                if (fragment.stateMutability === 'view' || fragment.constant === true) {
+                    // --- A. HANDLE READ-ONLY (VIEW/PURE) CALLS ---
+                    status.innerText = `Executing view function: ${functionNameFromURL}...`;
+
+                    // Extract arguments for the call
+                    const argsArray = Object.values(functionParamsFromURL || {});
+
+                    // This requires a provider, typically available via window.ethereum
+                    const provider = new ethers.providers.Web3Provider(window.ethereum);
+                    const signer = provider.getSigner();
+
+                    // Initialize a contract object to perform the call
+                    const contract = new ethers.Contract(contractAddressFromURL, CONTRACT_ABI, signer);
+
+                    // Execute the read-only call
+                    const result = await contract[functionNameFromURL](...argsArray);
+
+                    console.log("View call result:", result);
+                    loading.style.display = "none";
+
+                    // Handle success: display result and provide callback link
+                    status.innerHTML = `✅ Call Success! Result: ${result.toString().substring(0, 50)}...<br><br><a href="verimed://callback?status=success&result=${encodeURIComponent(result)}"><button>Return to App</button></a>`;
+
+                    return; // Exit here after a successful read call
+                }
+
+                // --- B. HANDLE WRITE (STATE-CHANGING) CALLS ---
+                status.innerText = `Preparing call to ${functionNameFromURL}...`;
+
+                // 2. ABI ENCODING (Only for state-changing transactions)
+                const argsArray = Object.values(functionParamsFromURL || {});
+                const encodedCallData = contractInterface.encodeFunctionData(functionNameFromURL, argsArray);
+
+                // Convert 1 HBAR to Wei (18 decimals)
                 const hbarAmount = 1;
-                const weiAmount = BigInt(hbarAmount) * BigInt(10 ** 18); // Convert to wei (18 decimals)
+                const weiAmount = BigInt(hbarAmount) * BigInt(10 ** 18);
                 const value = "0x" + weiAmount.toString(16);
 
-                console.log("Sending value:", value, "which is", weiAmount.toString(), "wei (for 1 HBAR)");
-
-                // Get current gas price estimate
+                // Get gas price estimate (unchanged)
                 let gasPrice;
                 try {
                     gasPrice = await window.ethereum.request({ method: "eth_gasPrice" });
-                    console.log("Current gas price:", gasPrice);
                 } catch (e) {
-                    console.log("Failed to get gas price, using default");
-                    gasPrice = "0x1"; // Very low gas price as fallback
+                    gasPrice = "0x1";
                 }
 
+                // 3. Send Transaction
                 const txHash = await window.ethereum.request({
                     method: "eth_sendTransaction",
                     params: [{
                         from: userAddress,
-                        to: userAddress, // sending to self for demo
+                        to: contractAddressFromURL,
                         value: value,
-                        gas: "0x5208", // Standard 21,000 gas limit for simple transfer
+                        gas: "0x493E0", // 300,000 gas
                         gasPrice: gasPrice,
+                        data: encodedCallData,
                     }]
                 });
 
+                // 4. Success and Redirect
                 console.log("Transaction sent:", txHash);
                 loading.style.display = "none";
 
@@ -177,6 +309,7 @@
                 status.innerHTML = `Transaction sent! Hash: ${txHash.substring(0, 10)}...<br><br><a href="${redirectUrl}"><button>Return to App</button></a>`;
 
             } catch (err) {
+                // ... (Error handling remains the same) ...
                 console.error("Transaction error:", err);
                 sendTxBtn.disabled = false;
                 loading.style.display = "none";
@@ -190,6 +323,7 @@
 
         // Auto-connect if already connected
         document.addEventListener("DOMContentLoaded", function () {
+            parseDeepLinkData();
             if (typeof window.ethereum !== "undefined") {
                 window.ethereum.request({ method: "eth_accounts" }).then(accounts => {
                     if (accounts.length > 0) {
