@@ -319,9 +319,9 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
               const SizedBox(height: 16),
 
               // // TODO: Remove this section
-              // Text("Scanned NFC Data", style: heading2TextStyle),
-              // const SizedBox(height: 8),
-              // Text(_patientNfcData, style: body2TextStyle),
+              Text("Scanned NFC Data", style: heading2TextStyle),
+              const SizedBox(height: 8),
+              Text(_patientNfcData, style: body2TextStyle),
 
               const SizedBox(height: 10),
               if (_patientTagDetected)

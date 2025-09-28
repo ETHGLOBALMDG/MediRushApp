@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+// import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,16 @@ import 'package:web3dart/web3dart.dart';
 // -----------------------------------------------------------
 // FUNCTIONS
 // -----------------------------------------------------------
+
+Future<void> loadZKey() async {
+  try {
+    final data = await rootBundle.load('assets/doctor_verification_final.zkey');
+    // `data` is a ByteData object
+    print('Loaded ${data.lengthInBytes} bytes');
+  } catch (e) {
+    print('Error loading asset: $e');
+  }
+}
 
 /// Converts a scanned QR code string back to the original string.
 /// Assumes the QR code string is Base64-encoded GZip-compressed data.

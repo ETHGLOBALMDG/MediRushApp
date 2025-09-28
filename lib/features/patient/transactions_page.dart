@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:app_frontend/core/utils.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web3dart/web3dart.dart';
-import '../../core/utils.dart';
 import '../../services/app_links_service.dart';
 import '../../services/transaction_watch_service.dart';
 import './review_page.dart';

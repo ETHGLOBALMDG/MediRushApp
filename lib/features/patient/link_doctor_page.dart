@@ -1,10 +1,11 @@
 import 'package:app_frontend/core/utils.dart';
-import 'package:app_frontend/features/doctor/verification_page.dart';
+import 'package:app_frontend/features/patient/verification_page.dart';
 import 'package:app_frontend/features/patient/transactions_page.dart';
 import 'package:flutter/material.dart';
 import '../../services/nfc_service.dart';
 import '../../core/themes.dart';
 import 'qr_scanner.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 class LinkDoctorPage extends StatefulWidget {
   const LinkDoctorPage({super.key});
@@ -203,9 +204,8 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
       MaterialPageRoute(
         // Assuming MedicalRecordsPage is your target page
         builder: (_) => TransactionsPage(
-          nfcData: '{"_patientID": "PATIENT_A12345"}',
-          treatmentData:
-              '{"treatment": "Eat healthy food", "diagnosis": "some diagnosis", "notes": "some notes"}',
+          nfcData: _nfcData,
+          treatmentData: _qrData!,
         ),
       ),
     );
@@ -350,204 +350,203 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
               const SizedBox(height: 12),
 
               // Show buttons if NFC tag detected
-              if (_tagDetected) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Card Status - Connected
-                    Container(
-                      decoration: BoxDecoration(
-                        color: lightGreenColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(10),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            "assets/wifi.png",
-                            width: 40,
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Card Status",
-                                style: body2DarkTextStyle,
-                              ),
-                              Text(
-                                "Connected",
-                                style: body2TextStyle,
-                              ),
-                            ],
-                          )
-                        ],
-                      ),
-                    ),
-
-                    // Data Synced - Synced
-                    Container(
-                      decoration: BoxDecoration(
-                        color: lightGreenColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.all(10),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            "assets/sync.png",
-                            width: 40,
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Data Synced",
-                                style: body2DarkTextStyle,
-                              ),
-                              Text(
-                                "Synced",
-                                style: body2TextStyle,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: 20),
-
-                // Container to write data into NFC
-                GestureDetector(
-                  onTap: _isWriting
-                      ? () {}
-                      : () => _writeNfcData(
-                          "{id: abababababababababababababababababababaaba, key: abababababababababababababababababababaaba}"),
-                  child: Container(
+              // if (_tagDetected) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Card Status - Connected
+                  Container(
                     decoration: BoxDecoration(
-                        border: Border.all(color: lightGreenColor, width: 2),
-                        borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        children: [
-                          Text("Tap Card to Write / Update",
-                              style: heading2TextStyle),
-                          SizedBox(height: 10),
-                          Image.asset("assets/nfcicon.png"),
-                          SizedBox(height: 10),
-                          Text(
-                            "Hold your NFC card near the back of your phone to write or update data",
-                            style: body2TextStyle,
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
+                      color: lightGreenColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Image.asset(
+                          "assets/wifi.png",
+                          width: 40,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Card Status",
+                              style: body2DarkTextStyle,
+                            ),
+                            Text(
+                              "Connected",
+                              style: body2TextStyle,
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+
+                  // Data Synced - Synced
+                  Container(
+                    decoration: BoxDecoration(
+                      color: lightGreenColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Image.asset(
+                          "assets/sync.png",
+                          width: 40,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Data Synced",
+                              style: body2DarkTextStyle,
+                            ),
+                            Text(
+                              "Synced",
+                              style: body2TextStyle,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 20),
+
+              // Container to write data into NFC
+              GestureDetector(
+                onTap: _isWriting
+                    ? () {}
+                    : () => _writeNfcData('{"id": "abc","pkey": "123",}'),
+                child: Container(
+                  decoration: BoxDecoration(
+                      border: Border.all(color: lightGreenColor, width: 2),
+                      borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      children: [
+                        Text("Tap Card to Write / Update",
+                            style: heading2TextStyle),
+                        SizedBox(height: 10),
+                        Image.asset("assets/nfcicon.png"),
+                        SizedBox(height: 10),
+                        Text(
+                          "Hold your NFC card near the back of your phone to write or update data",
+                          style: body2TextStyle,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
 
-                SizedBox(height: 20),
+              SizedBox(height: 20),
 
-                // Data Wrriten and Read
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Data Written
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            "assets/datawr.png",
-                            width: 40,
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Data Written",
-                                style: body2DarkTextStyle,
-                              ),
-                              Text(
-                                lastWrite,
-                                style: body2TextStyle,
-                              ),
-                            ],
-                          )
-                        ],
-                      ),
+              // Data Wrriten and Read
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Data Written
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Image.asset(
+                          "assets/datawr.png",
+                          width: 40,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Data Written",
+                              style: body2DarkTextStyle,
+                            ),
+                            Text(
+                              lastWrite,
+                              style: body2TextStyle,
+                            ),
+                          ],
+                        )
+                      ],
                     ),
+                  ),
 
-                    // Data Read
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      child: Row(
-                        children: [
-                          Image.asset(
-                            "assets/datard.png",
-                            width: 40,
-                          ),
-                          const SizedBox(width: 10),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Data Read",
-                                style: body2DarkTextStyle,
-                              ),
-                              Text(
-                                lastRead,
-                                style: body2TextStyle,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                  // Data Read
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        Image.asset(
+                          "assets/datard.png",
+                          width: 40,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Data Read",
+                              style: body2DarkTextStyle,
+                            ),
+                            Text(
+                              lastRead,
+                              style: body2TextStyle,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
 
-                const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-                // Cancel NFC
-                rowButton(
-                  onPressed: () {
-                    setState(() {
-                      _tagDetected = false;
-                      _nfcData = "No card scanned yet.";
-                    });
-                  },
-                  widgets: const [
-                    Icon(Icons.cancel, color: Colors.black),
-                    SizedBox(width: 6),
-                    Text(
-                      "Cancel",
-                      style: buttonTextStyle,
-                    ),
-                  ],
-                  backgroundColor: lightColor,
-                  foregroundColor: Colors.white,
-                  borderRadius: 8,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-              ],
+              // Cancel NFC
+              rowButton(
+                onPressed: () {
+                  setState(() {
+                    _tagDetected = false;
+                    _nfcData = "No card scanned yet.";
+                  });
+                },
+                widgets: const [
+                  Icon(Icons.cancel, color: Colors.black),
+                  SizedBox(width: 6),
+                  Text(
+                    "Cancel",
+                    style: buttonTextStyle,
+                  ),
+                ],
+                backgroundColor: lightColor,
+                foregroundColor: Colors.white,
+                borderRadius: 8,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              // ],
 
               const SizedBox(height: 16),
 
               // // TODO: Remove this section
-              // Text("Scanned NFC Data", style: heading2TextStyle),
-              // const SizedBox(height: 8),
-              // Text(_nfcData, style: body2TextStyle),
+              Text("Scanned NFC Data", style: heading2TextStyle),
+              const SizedBox(height: 8),
+              Text(_nfcData, style: body2TextStyle),
 
               // const SizedBox(height: 12),
               const Divider(color: Colors.grey, thickness: 0.5),
@@ -608,7 +607,16 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => VerificationPage(),
+                        builder: (_) => VerificationPage(
+                          credentials: DoctorCredentials(
+                              doctorId: "abc",
+                              publicKey: "def",
+                              medicalLicense: "hash",
+                              issueDate: DateTime(2000, 10, 5),
+                              expiryDate: DateTime(2070, 10, 5),
+                              signature: "signature",
+                              issuerPubKey: "issuerPubKey"),
+                        ),
                       ),
                     );
                   },

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:mopro_flutter/mopro_flutter.dart';
 import 'package:mopro_flutter/mopro_types.dart';
 import 'package:app_frontend/core/themes.dart';
@@ -8,11 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:crypto/crypto.dart';
 
 class VerificationPage extends StatefulWidget {
-  final DoctorCredentials? credentials;
+  final DoctorCredentials credentials;
 
   const VerificationPage({
     super.key,
-    this.credentials,
+    required this.credentials,
   });
 
   @override
@@ -67,7 +67,8 @@ class _VerificationPageState extends State<VerificationPage> {
       });
 
       final proofResult = await MoProService.generateCircomProof(
-        zkeyPath: 'assets/verification.zkey', // Your verification circuit
+        zkeyPath:
+            'assets/doctor_verification_final.zkey', // Your verification circuit
         inputsJson: jsonEncode(inputs),
         proofLib: ProofLib.arkworks,
       );
@@ -108,8 +109,6 @@ class _VerificationPageState extends State<VerificationPage> {
 
   Future<Map<String, dynamic>> _prepareCircomInputs(
       DoctorCredentials credentials) async {
-    // Convert credentials to circuit inputs
-    // This structure depends on your specific Circom circuit
     return {
       "doctorId": _stringToFieldElement(credentials.doctorId),
       "publicKey": _stringToFieldElement(credentials.publicKey),
