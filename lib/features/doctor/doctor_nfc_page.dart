@@ -129,28 +129,24 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
   /// Send a POST request to the backend server when the doctor scans the patient's NFC card
   Future<Map<String, dynamic>> sendPostRequest({
     required String url,
-    required String nfcData,
+    required Map<String, dynamic> nfcData,
   }) async {
     try {
       // 1. Prepare the request URL
       final uri = Uri.parse(url);
 
-      // 2. Convert the Dart map (JSON data) into a JSON string
-      final encodedData = parseNfc(nfcData);
-      final data = Uri.decodeComponent(encodedData);
-
       // 3. Send the POST request
+      final payload = nfcData;
+
       final response = await http.post(
         uri,
-        headers: {
-          'Content-Type': 'application/json', // Essential for sending JSON data
-          'Accept': 'application/json', // To request a JSON response
-        },
-        body: data,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload), // <-- Properly encodes to JSON string
       );
 
       // 4. Check the status code
       if (response.statusCode == 200 || response.statusCode == 201) {
+        print("SUCCESS!!!");
         // Success: Return the decoded response body
         return jsonDecode(response.body) as Map<String, dynamic>;
       } else {
@@ -322,16 +318,20 @@ class _DoctorNfcPageState extends State<DoctorNfcPage> {
 
               const SizedBox(height: 16),
 
-              // TODO: Remove this section
-              Text("Scanned NFC Data", style: heading2TextStyle),
-              const SizedBox(height: 8),
-              Text(_patientNfcData, style: body2TextStyle),
+              // // TODO: Remove this section
+              // Text("Scanned NFC Data", style: heading2TextStyle),
+              // const SizedBox(height: 8),
+              // Text(_patientNfcData, style: body2TextStyle),
 
               const SizedBox(height: 10),
               if (_patientTagDetected)
                 rowButton(
                   onPressed: () => sendPostRequest(
-                      url: "mybackendurl.com", nfcData: _patientNfcData),
+                      url: "https://pvgspzp0-3000.inc1.devtunnels.ms/api/creds",
+                      nfcData: {
+                        "id": "abc",
+                        "pkey": "123",
+                      }),
                   widgets: [
                     const Icon(Icons.arrow_upward_rounded),
                     const SizedBox(width: 8),

@@ -1,7 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:archive/archive.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:web3dart/crypto.dart';
+import 'package:web3dart/web3dart.dart';
 
 // -----------------------------------------------------------
 // FUNCTIONS
@@ -175,5 +181,146 @@ class SyncDateService {
   Future<String?> getLastWriteDate() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_writeDateKey);
+  }
+}
+
+// Define a simple structure for the result data
+class BackendTxnResult {
+  final String status; // 'monitoring', 'complete', or 'failure'
+  final String? txHash; // Transaction hash if submitted
+  final String?
+      resultData; // The fetched Blob ID (for View calls) or function output
+  final String? errorMessage;
+
+  BackendTxnResult({
+    required this.status,
+    this.txHash,
+    this.resultData,
+    this.errorMessage,
+  });
+
+  factory BackendTxnResult.fromJson(Map<String, dynamic> json) {
+    return BackendTxnResult(
+      status: json['status'] ?? 'unknown',
+      txHash: json['txHash'],
+      resultData: json['data'], // Maps to the 'data' field from your DApp POST
+      errorMessage: json['error'],
+    );
+  }
+}
+
+class TransactionWatcherService {
+  // ⚠️ Replace with the actual Hedera Testnet RPC URL
+  final String _hederaEvmRpcUrl = 'https://testnet.hashio.io/api';
+  final Web3Client _web3client;
+
+  // You would need the contract ABI to decode function outputs/events
+  final String _contractAbiJson = '...';
+
+  TransactionWatcherService()
+      : _web3client = Web3Client(
+          'https://testnet.hashio.io/api', // Use a static RPC for polling
+          http.Client(),
+        );
+
+  /// Starts polling the Hedera EVM network for a transaction receipt.
+  /// This simulates the job of the backend monitor, but runs on the client.
+  ///
+  /// Returns the transaction receipt once the transaction is mined.
+  Future<TransactionReceipt> monitorTransactionForReceipt(String txHash) async {
+    // Convert the transaction hash string to the required format
+    final transactionHash = Uint8List.fromList(hexToBytes(txHash));
+
+    // Polling logic: Check the network until the receipt is found
+    for (int i = 0; i < 60; i++) {
+      // Polls for up to 60 * 5 = 300 seconds (5 minutes)
+      try {
+        // 1. Ask the EVM node for the receipt
+        String hashString = bytesToHex(transactionHash, include0x: true);
+
+        final receipt = await _web3client.getTransactionReceipt(hashString);
+
+        if (receipt != null) {
+          debugPrint('Transaction mined! Hash: $txHash');
+          return receipt;
+        }
+      } catch (e) {
+        // Log error but continue polling if the node is having temporary issues
+        debugPrint('Error polling for receipt (attempt $i): $e');
+      }
+
+      // 2. Wait before the next poll
+      await Future.delayed(const Duration(seconds: 5));
+    }
+
+    throw TimeoutException('Transaction receipt not found after 5 minutes.');
+  }
+
+  /// Helper function to decode the output of a specific transaction receipt.
+  /// This requires the full ABI of your contract.
+
+  String? decodeTransactionResult(TransactionReceipt receipt) {
+    try {
+      final contract = DeployedContract(
+        ContractAbi.fromJson(_contractAbiJson, 'YourContractName'),
+        // Use a robust fallback for contractAddress
+        EthereumAddress.fromHex(receipt.contractAddress?.hex ??
+            '0x0000000000000000000000000000000000000000'),
+      );
+
+      // Assume the event you are interested in is named 'BlobIDUpdated'
+      final eventDefinition = contract.event('BlobIDUpdated');
+
+      for (final log in receipt.logs) {
+        final List<Uint8List> logTopics = log.topics != null
+            ? log.topics!.map((topic) {
+                // Cast the topic to EthereumAddress and access the bytes property
+                // This is necessary if the compiler is treating 'topic' as Object or String
+                final EthereumAddress address = topic as EthereumAddress;
+                return address.addressBytes;
+              }).toList()
+            : [];
+// 1. Prepare log.data (The third argument needed for decodeResults)
+        final logData = log.data ??
+            Uint8List(0); // ⬅️ Correctly handle log data as Uint8List
+
+// 2. Prepare log.topics (Conversion logic remains the same)
+        final List<String> hexLogTopics = logTopics.map((bytes) {
+          // bytesToHex is required for this conversion
+          return bytesToHex(bytes, include0x: true);
+        }).toList();
+
+// 3. CORRECTED CALL: Pass the list of hex topics and the raw log data
+        final decodedLog =
+            eventDefinition.decodeResults(hexLogTopics, logData.toString());
+
+        // Check if the log was successfully decoded by the target event
+        if (decodedLog.isNotEmpty) {
+          // Return a string representation of the decoded event
+          // Use .toString() on each decoded argument for safe concatenation
+          final patientId = decodedLog[0].toString();
+          final newBlobId = decodedLog[1].toString();
+
+          return 'Event: ${eventDefinition.name}, PatientID: $patientId, NewBlobID: $newBlobId';
+        }
+      }
+    } catch (e) {
+      debugPrint('Error decoding receipt logs: $e');
+    }
+
+    return null;
+  }
+
+  // Helper function required by web3dart
+  Uint8List hexToBytes(String hex) {
+    if (hex.startsWith('0x')) {
+      hex = hex.substring(2);
+    }
+    return Uint8List.fromList(List<int>.generate(hex.length ~/ 2,
+        (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16)));
+  }
+
+  void dispose() {
+    _web3client.dispose();
   }
 }

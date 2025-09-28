@@ -34,7 +34,7 @@ class _ConnectWalletPageState extends State<ConnectWalletPage>
   // static const int _maxRetries = 3;
 
   // Hedera EVM constants
-  static const String _dappUrl = 'https://delightful-pasca-9daf52.netlify.app';
+  static const String _dappUrl = 'https://38a7299c2911.ngrok-free.app';
   static const String _hederaEvmRpcUrl = 'https://testnet.hashio.io/api';
 
   final EthereumAddress _contractAddress = EthereumAddress.fromHex(

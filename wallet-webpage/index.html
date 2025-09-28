@@ -50,18 +50,19 @@
     <h1>MetaMask Hedera DApp</h1>
 
     <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
-    <button id="sendTxBtn" onclick="sendTransaction()" style="display: none;" disabled>Send HBAR</button>
+    <button id="sendTxBtn" onclick="sendTransaction()" style="display: none;" disabled>Execute Contract Call</button>
 
     <div class="status" id="status">Status: Click to connect your wallet</div>
     <div class="loading" id="loading">Processing...</div>
 
-    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.15.0/ethers.umd.min.js"
+        type="application/javascript"></script>
 
     <script>
         let userAddress;
 
         const HEDERA_CHAIN_ID = "0x128"; // Hedera Testnet (296)
-        const HBAR_DECIMALS = 8;
+        const HBAR_DECIMALS = 8; // Not used for BigInt conversion, but kept for context
 
         const CONTRACT_ABI = [
             {
@@ -119,21 +120,12 @@
             }
         ];
 
-        // --- NEW GLOBAL STATE FOR CONTRACT CALL ---
+        // --- GLOBAL STATE ---
         let contractAddressFromURL;
         let functionNameFromURL;
         let functionParamsFromURL;
-        // --- END NEW STATE ---
-
-        // Initialize the interface using the ABI (This requires Ethers.js)
-        let contractInterface;
-        try {
-            if (typeof ethers !== 'undefined') {
-                contractInterface = new ethers.utils.Interface(CONTRACT_ABI);
-            }
-        } catch (e) {
-            console.error("Ethers or ABI initialization failed:", e);
-        }
+        let contractInterface = null;
+        // --- END GLOBAL STATE ---
 
         // --- NEW FUNCTION TO PARSE URL DATA ---
         function parseDeepLinkData() {
@@ -145,7 +137,6 @@
 
             if (paramsJson) {
                 try {
-                    // Decode URI component (e.g., handles spaces/symbols if not perfectly clean)
                     const decodedJson = decodeURIComponent(paramsJson);
                     functionParamsFromURL = JSON.parse(decodedJson);
                     console.log("Parsed Params:", functionParamsFromURL);
@@ -190,7 +181,7 @@
                         nativeCurrency: {
                             name: "HBAR",
                             symbol: "HBAR",
-                            decimals: 18   // MetaMask enforces 18 decimals for native currency
+                            decimals: 18
                         },
                         rpcUrls: ["https://testnet.hashio.io/api"],
                         blockExplorerUrls: ["https://testnet.hashscan.io"]
@@ -223,7 +214,7 @@
             }
         }
 
-        // --- MODIFIED sendTransaction function ---
+        // --- MODIFIED sendTransaction function (V6 SYNTAX) ---
 
         async function sendTransaction() {
             const sendTxBtn = document.getElementById("sendTxBtn");
@@ -235,6 +226,13 @@
                 return;
             }
 
+            // Check if the interface was successfully initialized
+            if (contractInterface === null) {
+                status.innerText = "Error: Ethers interface failed to initialize. Check ABI in console.";
+                console.error("Ethers Interface is NULL. Initialization failed.");
+                return;
+            }
+
             try {
                 sendTxBtn.disabled = true;
                 loading.style.display = "block";
@@ -242,16 +240,20 @@
                 // 1. DETERMINE FUNCTION TYPE
                 const fragment = contractInterface.getFunction(functionNameFromURL);
 
+                // If getFunction() returns null (function name mismatch), throw an error.
+                if (!fragment) {
+                    throw new Error(`Function '${functionNameFromURL}' not found in ABI.`);
+                }
+
                 if (fragment.stateMutability === 'view' || fragment.constant === true) {
                     // --- A. HANDLE READ-ONLY (VIEW/PURE) CALLS ---
                     status.innerText = `Executing view function: ${functionNameFromURL}...`;
 
-                    // Extract arguments for the call
                     const argsArray = Object.values(functionParamsFromURL || {});
 
-                    // This requires a provider, typically available via window.ethereum
-                    const provider = new ethers.providers.Web3Provider(window.ethereum);
-                    const signer = provider.getSigner();
+                    // 🌟 V6 UPDATE 2: Use BrowserProvider for the local node connection
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner(); // await is good practice here
 
                     // Initialize a contract object to perform the call
                     const contract = new ethers.Contract(contractAddressFromURL, CONTRACT_ABI, signer);
@@ -261,6 +263,36 @@
 
                     console.log("View call result:", result);
                     loading.style.display = "none";
+
+                    // Inside sendTransaction, View Call success block:
+                    // ...
+                    // Execute the read-only call
+                    result = await contract[functionNameFromURL](...argsArray);
+
+                    console.log("View call result:", result);
+                    loading.style.display = "none";
+
+                    // --- NEW FIX: SEND RESULT TO BACKEND ---
+                    const CALLBACK_ENDPOINT = 'https://YOUR-BACKEND-API.com/api/save-result'; // ⚠️ Replace with your actual endpoint
+
+                    // Use the user's address as a unique key for the temporary storage
+                    const saveKey = userAddress;
+
+                    await fetch(CALLBACK_ENDPOINT, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            key: saveKey, // Unique key for Flutter to check
+                            status: 'success',
+                            data: result.toString(), // The fetched blob ID
+                        })
+                    });
+
+                    // NOTE: We change the redirect to a simple browser back button or ask the user to switch apps.
+
+                    return; // Exit here after a successful read call
 
                     // Handle success: display result and provide callback link
                     status.innerHTML = `✅ Call Success! Result: ${result.toString().substring(0, 50)}...<br><br><a href="verimed://callback?status=success&result=${encodeURIComponent(result)}"><button>Return to App</button></a>`;
@@ -324,6 +356,24 @@
         // Auto-connect if already connected
         document.addEventListener("DOMContentLoaded", function () {
             parseDeepLinkData();
+
+            // 🌟 V6 UPDATE 3: Initialization moved inside DOMContentLoaded and V6 syntax applied
+            try {
+                if (typeof ethers !== 'undefined') {
+                    // 🌟 V6 FIX: Removed 'utils.'
+                    contractInterface = new ethers.Interface(CONTRACT_ABI);
+                    console.log("Ethers Interface initialized successfully.");
+                } else {
+                    console.error("Ethers library not defined when DOMContentLoaded fired.");
+                    alert("Ethers Library Missing! Cannot initialize contract interface.");
+                }
+            } catch (e) {
+                console.error("Contract ABI initialization failed:", e);
+                // Set interface to null on failure to prevent "not defined" error
+                contractInterface = null;
+            }
+            // -----------------------------------------------------
+
             if (typeof window.ethereum !== "undefined") {
                 window.ethereum.request({ method: "eth_accounts" }).then(accounts => {
                     if (accounts.length > 0) {

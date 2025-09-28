@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web3dart/web3dart.dart';
+import '../../core/utils.dart';
 import '../../services/app_links_service.dart';
 import '../../services/transaction_watch_service.dart';
 import './review_page.dart';
@@ -14,8 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/themes.dart';
 
 class TransactionsPage extends StatefulWidget {
-  final String
-      treatmentData; // the new data of the treatment of the patient that needs to be appended to the already existing data on walrus
+  final String treatmentData;
   final String nfcData;
 
   const TransactionsPage(
@@ -28,81 +28,205 @@ class TransactionsPage extends StatefulWidget {
 class _TransactionsPageState extends State<TransactionsPage>
     with WidgetsBindingObserver {
   late final TransactionMonitorService _monitorService;
-  int _txnStep = 0; // track which txn user is on (0, 1, 2)
+  late final TransactionWatcherService _transactionWatcher;
 
-  String _status = "Enter your EVM address to monitor contract events";
+  int _txnStep = 0;
+  String _status = "Ready to start medical record update process";
+
   StreamSubscription<Uri>? _linkSubscription;
-  Timer? _monitoringTimer;
   final appLinks = AppLinksService();
-  final TextEditingController _addressController = TextEditingController();
 
   bool _isWaitingForCallback = false;
-  bool _isMonitoring = false;
-  String? _monitoredAddress;
-  String? _lastTransactionHash;
-  // NOTE: This list now stores simplified EVM event data, not full Hedera transactions
-  List<Map<String, dynamic>> _recentTransactions = [];
   bool _hasNetworkConnection = true;
-  // int _consecutiveErrors = 0;
-  // static const int _maxRetries = 3;
+  bool _isProcessingTransaction = false;
 
-  // Hedera EVM constants
-  static const String _dappUrl = 'https://delightful-pasca-9daf52.netlify.app';
-  static const String _hederaEvmRpcUrl = 'https://testnet.hashio.io/api';
+  String? _currentTransactionHash;
+  String? _oldBlobId;
+  String? _newBlobId;
 
-  final EthereumAddress _contractAddress = EthereumAddress.fromHex(
-      '0xb336f276bd3c380c5183a0a2f21e631e4a333d00'); // ⚠️ Your Contract Address
-  final String _smartContractAddress =
+  // Transaction results storage
+  Map<String, dynamic> _transactionResults = {};
+
+  // Constants
+  static const String _dappUrl = 'https://38a7299c2911.ngrok-free.app';
+  static const String _smartContractAddress =
       "0xb336f276bd3c380c5183a0a2f21e631e4a333d00";
-
-  late Web3Client _web3client;
-  int? _lastBlockNumber;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _web3client = Web3Client(_hederaEvmRpcUrl, http.Client());
-    _initUniLinks();
-    _checkNetworkConnection();
+    _initializeServices();
+  }
 
+  void _initializeServices() {
+    _transactionWatcher = TransactionWatcherService();
     _monitorService = TransactionMonitorService(
       backendUrl: "https://hedera-tx-monitor-backend.onrender.com",
     );
 
-    // Listen to new transactions
-    _monitorService.stream.listen((txn) async {
-      final isNew = await TxnHashStorage.isNew(txn.transactionHash);
-      if (isNew) {
-        await TxnHashStorage.save(txn.transactionHash);
-        print("[TransactionsPage] Confirmed new txn: ${txn.transactionHash}");
+    // Listen to new transactions from backend
+    _monitorService.stream.listen(_handleNewTransaction);
+    _monitorService.start();
 
-        if (mounted) {
+    _initUniLinks();
+    _checkNetworkConnection();
+  }
+
+  Future<void> _handleNewTransaction(dynamic txn) async {
+    final transactionHash = txn.transactionHash;
+
+    // Check if this is a new transaction
+    final isNew = await TxnHashStorage.isNew(transactionHash);
+    if (!isNew) return;
+
+    await TxnHashStorage.save(transactionHash);
+    print("[TransactionsPage] Processing new transaction: $transactionHash");
+
+    if (mounted) {
+      setState(() {
+        _currentTransactionHash = transactionHash;
+        _isProcessingTransaction = true;
+        _status =
+            "Processing transaction: ${transactionHash.substring(0, 10)}...";
+      });
+
+      // Poll for transaction receipt and decode results
+      await _processTransactionReceipt(transactionHash);
+    }
+  }
+
+  Future<void> _processTransactionReceipt(String transactionHash) async {
+    try {
+      setState(() {
+        _status = "Waiting for transaction confirmation...";
+      });
+
+      // Poll for transaction receipt
+      final receipt = await _transactionWatcher
+          .monitorTransactionForReceipt(transactionHash);
+
+      if (mounted) {
+        setState(() {
+          _status = "Transaction confirmed! Decoding results...";
+        });
+
+        // Decode transaction results
+        final decodedResult =
+            _transactionWatcher.decodeTransactionResult(receipt);
+
+        if (decodedResult != null) {
+          await _handleTransactionResult(decodedResult, transactionHash);
+        } else {
           setState(() {
-            _txnStep++;
+            _status = "Transaction confirmed but couldn't decode results";
           });
-
-          // After 3rd transaction → navigate to review page
-          if (_txnStep >= 3) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ReviewPage(),
-              ),
-            );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Transaction $_txnStep confirmed! Proceed."),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
         }
+
+        _completeTransactionStep();
       }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _status = "Error processing transaction: $e";
+          _isProcessingTransaction = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Transaction processing failed: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleTransactionResult(
+      String decodedResult, String transactionHash) async {
+    // Store the transaction result
+    _transactionResults[transactionHash] = decodedResult;
+
+    // Extract relevant data based on transaction step
+    switch (_txnStep) {
+      case 0: // fetchBlobID result
+        _extractOldBlobId(decodedResult);
+        break;
+      case 1: // updateID result
+        _handlePatientIdUpdate(decodedResult);
+        break;
+      case 2: // updateBlobID result
+        _extractNewBlobId(decodedResult);
+        break;
+    }
+
+    setState(() {
+      _status = "Step ${_txnStep + 1} completed successfully!";
+    });
+  }
+
+  void _extractOldBlobId(String decodedResult) {
+    // Parse the decoded result to extract the old blob ID
+    try {
+      // Assuming the decoded result contains the blob ID
+      final regex = RegExp(r'BlobID:\s*(\S+)');
+      final match = regex.firstMatch(decodedResult);
+      if (match != null) {
+        _oldBlobId = match.group(1);
+        print("Extracted old blob ID: $_oldBlobId");
+      }
+    } catch (e) {
+      print("Error extracting old blob ID: $e");
+    }
+  }
+
+  void _handlePatientIdUpdate(String decodedResult) {
+    // Handle patient ID update result
+    print("Patient ID update result: $decodedResult");
+  }
+
+  void _extractNewBlobId(String decodedResult) {
+    // Parse the decoded result to extract the new blob ID
+    try {
+      final regex = RegExp(r'NewBlobID:\s*(\S+)');
+      final match = regex.firstMatch(decodedResult);
+      if (match != null) {
+        _newBlobId = match.group(1);
+        print("Extracted new blob ID: $_newBlobId");
+      }
+    } catch (e) {
+      print("Error extracting new blob ID: $e");
+    }
+  }
+
+  void _completeTransactionStep() {
+    setState(() {
+      _txnStep++;
+      _isProcessingTransaction = false;
+      _currentTransactionHash = null;
     });
 
-    _monitorService.start();
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Transaction step $_txnStep completed successfully!"),
+        backgroundColor: Colors.green,
+      ),
+    );
+
+    // Navigate to review page after all transactions are complete
+    if (_txnStep >= 3) {
+      Timer(const Duration(seconds: 2), () {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ReviewPage(),
+            ),
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -111,13 +235,9 @@ class _TransactionsPageState extends State<TransactionsPage>
       _checkNetworkConnection();
       if (_isWaitingForCallback) {
         setState(() {
-          _status = "Returned to app. Monitoring for events...";
+          _status = "Returned to app. Ready to continue...";
           _isWaitingForCallback = false;
         });
-
-        if (_monitoredAddress != null) {
-          _startMonitoring(_monitoredAddress!);
-        }
       }
     }
   }
@@ -125,224 +245,63 @@ class _TransactionsPageState extends State<TransactionsPage>
   Future<void> _checkNetworkConnection() async {
     try {
       final result = await InternetAddress.lookup('google.com');
-      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
-        setState(() {
-          _hasNetworkConnection = true;
-        });
-      }
+      setState(() {
+        _hasNetworkConnection =
+            result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+        if (!_hasNetworkConnection) {
+          _status = "No internet connection. Please check your network.";
+        }
+      });
     } catch (e) {
       setState(() {
         _hasNetworkConnection = false;
         _status = "No internet connection. Please check your network.";
       });
-      debugPrint("Network check failed: $e");
     }
   }
 
-  // VALIDATION: Changed to EVM address validation (0x...)
-  bool _isValidEvmAddress(String address) {
-    final evmRegex = RegExp(r'^0x[a-fA-F0-9]{40}$');
-    return evmRegex.hasMatch(address);
-  }
-
-  // START MONITORING: Initializes block number and polling timer
-  void _startMonitoring(String address) async {
-    if (!_isValidEvmAddress(address)) {
-      setState(() {
-        _status = "Invalid EVM address. Please check and try again.";
-      });
+  void _executeTransaction(
+      String functionName, Map<String, dynamic> params) async {
+    if (_isProcessingTransaction) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please wait for the current transaction to complete"),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
 
     if (!_hasNetworkConnection) {
-      setState(() {
-        _status = "Cannot start monitoring: No internet connection";
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("No internet connection available"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
     setState(() {
-      _monitoredAddress = address;
-      _isMonitoring = true;
-      _status = "Monitoring Contract Events for: ${address.substring(0, 6)}...";
+      _status = "Initiating $functionName transaction...";
     });
 
-    try {
-      _lastBlockNumber = await _web3client.getBlockNumber();
-      await _checkForNewEvents(); // Initial check
-    } catch (e) {
-      setState(() {
-        _status = "Failed to connect to Hedera EVM RPC: $e";
-      });
-      return;
-    }
-
-    _monitoringTimer?.cancel();
-    _monitoringTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      if (_hasNetworkConnection) {
-        _checkForNewEvents();
-      } else {
-        _checkNetworkConnection();
-      }
-    });
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Started monitoring contract events for: $address"),
-        backgroundColor: Colors.green,
-      ),
-    );
+    await _openMetaMaskForTransaction(
+        functionName: functionName, params: params);
   }
 
-  // CHECK FOR NEW EVENTS: Uses web3dart.getLogs()
-  Future<void> _checkForNewEvents() async {
-    if (!_hasNetworkConnection || _lastBlockNumber == null) return;
-
-    try {
-      final latestBlock = await _web3client.getBlockNumber();
-
-      if (latestBlock > _lastBlockNumber!) {
-        // Prepare filter to check for logs *from* the contract address
-        final filterOptions = FilterOptions(
-          fromBlock: BlockNum.exact(_lastBlockNumber! + 1),
-          toBlock: BlockNum.exact(latestBlock),
-          address: _contractAddress,
-          topics: const [], // catch all contracts
-        );
-
-        final events = await _web3client.getLogs(filterOptions);
-
-        if (events.isNotEmpty) {
-          final latestEvent = events.first;
-          final currentHash = latestEvent.transactionHash;
-
-          if (_lastTransactionHash == null ||
-              currentHash != _lastTransactionHash) {
-            _lastTransactionHash = currentHash;
-            // Simplified fetch to update the UI list with the new data
-            await _fetchRecentTransactions();
-
-            setState(() {
-              _status =
-                  "New event detected! Tx Hash: ${currentHash?.substring(0, 10)}...";
-            });
-
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("🎉 New smart contract event detected!"),
-                backgroundColor: Colors.blue,
-              ),
-            );
-          }
-        }
-        _lastBlockNumber = latestBlock;
-      } else {
-        setState(() {
-          _status =
-              "Monitoring active - Last check: ${DateTime.now().toString().substring(11, 19)}";
-        });
-      }
-    } catch (e) {
-      debugPrint("Error checking for new events: $e");
-      setState(() {
-        _status = "Monitoring paused - connection issues. Retrying...";
-      });
-    }
-  }
-
-  // FETCH TRANSACTIONS: Uses Hedera EVM HashScan/Mirror Node REST API for simplified display data
-  Future<void> _fetchRecentTransactions() async {
-    try {
-      // NOTE: This REST API call is for demonstration/display purposes only,
-      // as fetching EVM event *logs* is best done via RPC above.
-      final apiUrl =
-          'https://testnet.hashscan.io/api/v2/transactions?account.id=$_monitoredAddress&order=desc&limit=5';
-      final response = await http.get(Uri.parse(apiUrl));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['transactions'] != null && data['transactions'] is List) {
-          // Store the raw transaction data for display
-          setState(() {
-            _recentTransactions =
-                List<Map<String, dynamic>>.from(data['transactions']);
-          });
-        }
-      } else {
-        debugPrint("Failed to fetch EVM transactions: ${response.statusCode}");
-      }
-    } catch (e) {
-      debugPrint("Error fetching recent transactions: $e");
-    }
-  }
-
-  // FORMATTING: Convert tinybars to HBAR for UI display
-  // String _formatTinybarsToHbar(String tinybars) {
-  //   try {
-  //     final hbarAmount = BigInt.parse(tinybars) / BigInt.from(10).pow(8);
-  //     return hbarAmount.toStringAsFixed(8);
-  //   } catch (e) {
-  //     return '0';
-  //   }
-  // }
-
-  // FORMATTING: Hedera timestamp to readable date
-  String _formatTimestamp(String timestamp) {
-    try {
-      final parts = timestamp.split('.');
-      final date =
-          DateTime.fromMillisecondsSinceEpoch(int.parse(parts[0]) * 1000);
-      return "${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
-    } catch (e) {
-      return timestamp;
-    }
-  }
-
-  void _stopMonitoring() {
-    _monitoringTimer?.cancel();
-    setState(() {
-      _isMonitoring = false;
-      _monitoredAddress = null;
-      _status = "Monitoring stopped. Enter a new address to start again.";
-      _recentTransactions.clear();
-      // _consecutiveErrors = 0;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Stopped monitoring wallet"),
-        backgroundColor: Colors.orange,
-      ),
-    );
-  }
-
-  void _openMetaMask({
+  Future<void> _openMetaMaskForTransaction({
     required String functionName,
     required Map<String, dynamic> params,
   }) async {
-    // if (_monitoredAddress == null) {
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     const SnackBar(
-    //       content:
-    //           Text("Please enter and start monitoring a wallet address first"),
-    //       backgroundColor: Colors.red,
-    //     ),
-    //   );
-    //   return;
-    // }
-
     setState(() {
-      _status = "Opening MetaMask browser with dApp...";
+      _status = "Opening MetaMask for $functionName...";
       _isWaitingForCallback = true;
     });
 
-    // Construct URL with query parameters for contract call
     final queryParams = {
       "contract": _smartContractAddress,
-      "function": functionName, // pass which function you want
+      "function": functionName,
       "params": jsonEncode(params),
     };
 
@@ -355,15 +314,13 @@ class _TransactionsPageState extends State<TransactionsPage>
         await launchUrl(launchUri, mode: LaunchMode.externalApplication);
 
         setState(() {
-          _status = "MetaMask opened with dApp. Monitoring for transactions...";
+          _status = "MetaMask opened. Please complete the transaction...";
         });
 
-        if (!mounted) return;
-
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                "MetaMask opened! Any contract calls will be monitored automatically."),
+          SnackBar(
+            content: Text("MetaMask opened for $functionName transaction"),
+            backgroundColor: Colors.blue,
           ),
         );
       } else {
@@ -375,23 +332,12 @@ class _TransactionsPageState extends State<TransactionsPage>
         _isWaitingForCallback = false;
       });
 
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Error: $e\nPlease make sure MetaMask is installed."),
           backgroundColor: Colors.red,
         ),
       );
-    }
-  }
-
-  String _formatWeiToEther(String weiString) {
-    try {
-      final weiAmount = BigInt.parse(weiString);
-      final etherAmount = weiAmount / BigInt.from(10).pow(18);
-      return etherAmount.toStringAsFixed(6); // 6 decimal places
-    } catch (e) {
-      return '0';
     }
   }
 
@@ -402,18 +348,14 @@ class _TransactionsPageState extends State<TransactionsPage>
         _handleIncomingLink(initialUri);
       }
     } on PlatformException catch (e) {
-      debugPrint("Failed to get initial uri: $e");
       setState(() {
         _status = "Error: Failed to initialize deep links";
       });
     }
 
     _linkSubscription = appLinks.linkStream.listen(
-      (Uri uri) {
-        _handleIncomingLink(uri);
-      },
+      _handleIncomingLink,
       onError: (Object err) {
-        debugPrint("Failed to listen for uri: $err");
         setState(() {
           _status = "Error: Deep link listener failed";
         });
@@ -422,7 +364,8 @@ class _TransactionsPageState extends State<TransactionsPage>
   }
 
   void _handleIncomingLink(Uri uri) {
-    debugPrint("Received deep link: $uri");
+    if (!mounted) return;
+
     _isWaitingForCallback = false;
 
     if (uri.scheme == "verimed" && uri.host == "callback") {
@@ -432,44 +375,71 @@ class _TransactionsPageState extends State<TransactionsPage>
 
       if (status == 'success' && txHash != null) {
         setState(() {
-          _status = "Transaction completed! Hash: $txHash";
+          _status = "Transaction submitted! Waiting for confirmation...";
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Transaction hash received: $txHash")),
-        );
       } else if (status == 'failure' && error != null) {
         setState(() {
           _status = "Transaction failed: ${Uri.decodeComponent(error)}";
+          _isProcessingTransaction = false;
         });
       }
     }
   }
 
-  @override
-  void dispose() {
-    _monitorService.dispose();
+  Widget _buildTransactionStep(int stepNumber, String title,
+      String functionName, Map<String, dynamic> params,
+      {bool isEnabled = true}) {
+    final isCurrentStep = _txnStep == stepNumber;
+    final isCompleted = _txnStep > stepNumber;
+    final isProcessing = _isProcessingTransaction && isCurrentStep;
 
-    _linkSubscription?.cancel();
-    _monitoringTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
-    _addressController.dispose();
-    _web3client.dispose();
-    super.dispose();
-  }
+    Color backgroundColor = lightGreenColor;
+    Color foregroundColor = Colors.black;
 
-  /// This simulates sending a transaction for each button
-  void _sendTransaction(String function, Map<String, dynamic> params) async {
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Executing $function transaction..."),
+    if (isCompleted) {
+      backgroundColor = Colors.green;
+      foregroundColor = Colors.white;
+    } else if (!isEnabled || (!isCurrentStep && !isCompleted)) {
+      backgroundColor = Colors.grey.shade300;
+      foregroundColor = Colors.grey.shade600;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: rowButton(
+        onPressed: isEnabled && isCurrentStep && !isProcessing
+            ? () => _executeTransaction(functionName, params)
+            : () {},
+        widgets: [
+          if (isProcessing)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          if (isProcessing) const SizedBox(width: 8),
+          if (isCompleted)
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+          if (isCompleted) const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              isProcessing ? "Processing..." : title,
+              style: buttonTextStyle.copyWith(color: foregroundColor),
+            ),
+          ),
+        ],
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        borderRadius: 8,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
-    _openMetaMask(functionName: function, params: params);
   }
 
   @override
   Widget build(BuildContext context) {
+    Map<String, dynamic> jsonData = jsonDecode(widget.nfcData);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Update Medical History", style: heading2TextStyle),
@@ -479,46 +449,133 @@ class _TransactionsPageState extends State<TransactionsPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text("Scanned Data Received:",
-                style: TextStyle(fontFamily: "Poppins", fontSize: 16)),
-            const SizedBox(height: 8),
+            // Status indicator
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Text(
+                _status,
+                style: const TextStyle(
+                  fontFamily: "Poppins",
+                  fontSize: 14,
+                  color: Colors.blue,
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Scanned data display
             Text(
-              widget.treatmentData,
-              style:
-                  const TextStyle(fontFamily: 'monospace', color: Colors.grey),
+              "Scanned Data Received:",
+              style: const TextStyle(fontFamily: "Poppins", fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                widget.treatmentData,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  color: Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
             ),
             const SizedBox(height: 30),
-            rowButton(
-              onPressed: () {
-                // the FIRST function call which will fetch us the blob id based on the wallet address and private key that we have
-                Map<String, dynamic> jsonData = jsonDecode(widget.nfcData);
-                if (_txnStep == 0) _sendTransaction("fetchBlobID", jsonData);
-              },
-              widgets: [Text("Get Old ID", style: buttonTextStyle)],
-              backgroundColor: lightGreenColor,
-              foregroundColor: Colors.black,
-              borderRadius: 8,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+
+            // Transaction progress
+            Text(
+              "Transaction Progress: Step ${_txnStep + 1} of 3",
+              style: const TextStyle(
+                fontFamily: "Poppins",
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            const SizedBox(height: 10),
-            rowButton(
-              onPressed: () {
-                if (_txnStep == 1) _sendTransaction("updateID", {});
-              },
-              widgets: [Text("Update Patient ID", style: buttonTextStyle)],
-              backgroundColor: lightGreenColor,
-              foregroundColor: Colors.black,
-              borderRadius: 8,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            const SizedBox(height: 16),
+
+            // Transaction steps
+            _buildTransactionStep(
+              0,
+              "Get Old Medical Record ID",
+              "fetchBlobID",
+              jsonData,
+              isEnabled: _txnStep == 0,
             ),
-            const SizedBox(height: 10),
+            _buildTransactionStep(
+              1,
+              "Update Patient ID",
+              "updateID",
+              {"treatmentData": widget.treatmentData},
+              isEnabled: _txnStep == 1,
+            ),
+            _buildTransactionStep(
+              2,
+              "Store New Medical Record ID",
+              "updateBlobID",
+              {"oldBlobId": _oldBlobId, "treatmentData": widget.treatmentData},
+              isEnabled: _txnStep == 2,
+            ),
+
+            const Spacer(),
+
+            // Results summary (if any transactions completed)
+            if (_transactionResults.isNotEmpty) ...[
+              const Text(
+                "Transaction Results:",
+                style: TextStyle(
+                  fontFamily: "Poppins",
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_oldBlobId != null) Text("Old Blob ID: $_oldBlobId"),
+                    if (_newBlobId != null) Text("New Blob ID: $_newBlobId"),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // Review button
             rowButton(
-              onPressed: () {
-                if (_txnStep == 2) _sendTransaction("updateBlobID", {});
-              },
-              widgets: [Text("Update New ID", style: buttonTextStyle)],
-              backgroundColor: lightGreenColor,
-              foregroundColor: Colors.black,
+              onPressed: _txnStep >= 3
+                  ? () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => ReviewPage()),
+                      );
+                    }
+                  : () {},
+              widgets: [
+                Text(
+                  "Leave a Review for the Doctor",
+                  style: buttonTextStyle.copyWith(
+                    color: _txnStep >= 3 ? Colors.black : Colors.grey,
+                  ),
+                )
+              ],
+              backgroundColor:
+                  _txnStep >= 3 ? Colors.white : Colors.grey.shade200,
+              foregroundColor: _txnStep >= 3 ? Colors.black : Colors.grey,
               borderRadius: 8,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
@@ -526,5 +583,14 @@ class _TransactionsPageState extends State<TransactionsPage>
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _monitorService.dispose();
+    _transactionWatcher.dispose();
+    _linkSubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }

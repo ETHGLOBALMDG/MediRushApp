@@ -426,7 +426,8 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
                 GestureDetector(
                   onTap: _isWriting
                       ? () {}
-                      : () => _writeNfcData("http://somerandomdata.com"),
+                      : () => _writeNfcData(
+                          "{id: abababababababababababababababababababaaba, key: abababababababababababababababababababaaba}"),
                   child: Container(
                     decoration: BoxDecoration(
                         border: Border.all(color: lightGreenColor, width: 2),
@@ -543,12 +544,12 @@ class _LinkDoctorPageState extends State<LinkDoctorPage> {
 
               const SizedBox(height: 16),
 
-              // TODO: Remove this section
-              Text("Scanned NFC Data", style: heading2TextStyle),
-              const SizedBox(height: 8),
-              Text(_nfcData, style: body2TextStyle),
+              // // TODO: Remove this section
+              // Text("Scanned NFC Data", style: heading2TextStyle),
+              // const SizedBox(height: 8),
+              // Text(_nfcData, style: body2TextStyle),
 
-              const SizedBox(height: 12),
+              // const SizedBox(height: 12),
               const Divider(color: Colors.grey, thickness: 0.5),
               const SizedBox(height: 12),
 
